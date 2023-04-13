@@ -130,3 +130,6 @@ def test_extract_reblogs():
     reblogs = service.extract_reblogs([status_reblog, status_noreblog])
 
     assert reblogs == [fixtures.STATUS_ONE]
+
+
+# TODO: test media attachments

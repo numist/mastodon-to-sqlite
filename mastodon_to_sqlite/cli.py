@@ -165,9 +165,9 @@ def followings(db_path, auth):
     default="auth.json",
     help="Path to auth.json token file",
 )
-@click.option(
+@click.option(  # TODO: apply this option to favourites and bookmarks commands
     "--include-media/--no-include-media",
-    default=True,
+    default=False,
     help="Include media attachments",
 )
 def statuses(db_path, auth, include_media):

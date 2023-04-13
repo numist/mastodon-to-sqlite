@@ -289,6 +289,8 @@ def save_media_attachments(
             Path(path_dir).mkdir(parents=True, exist_ok=True)
             data = requests.get(media_attachment["url"]).content
             # TODO: data == '{"error":"Too many requests"}'
+            # probably best to refactor this into client
+            # and use client.media_attachment(url) or something
             file_path.write_bytes(data)
 
         transformer_media_attachment(media_attachment)
@@ -318,9 +320,9 @@ def transformer_status(status: Dict[str, Any]):
     status["reblog_of"] = reblog["id"] if reblog else None
 
 
-# TODO: include_media support on favourites and bookmarks commands
+# TODO: remove default for include_media once supported by favourites and bookmarks commands
 def save_statuses(
-    db: Database, statuses: List[Dict[str, Any]], include_media: bool = True
+    db: Database, statuses: List[Dict[str, Any]], include_media: bool = False
 ):
     """
     Save Mastodon statuses and their accounts to the SQLite database.
