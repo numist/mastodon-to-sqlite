@@ -165,7 +165,12 @@ def followings(db_path, auth):
     default="auth.json",
     help="Path to auth.json token file",
 )
-def statuses(db_path, auth):
+@click.option(
+    "--include-media/--no-include-media",
+    default=True,
+    help="Include media attachments",
+)
+def statuses(db_path, auth, include_media):
     """
     Save statuses for the authenticated user.
     """
@@ -183,7 +188,7 @@ def statuses(db_path, auth):
         show_pos=True,
     ) as bar:
         for statuses in bar:
-            service.save_statuses(db, statuses)
+            service.save_statuses(db, statuses, include_media)
             bar.pos = bar.pos + len(statuses) - 1
 
 

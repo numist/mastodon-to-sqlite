@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional
 
+import requests
 from sqlite_utils.db import Database, Table
 
 from .client import MastodonClient
@@ -29,6 +30,7 @@ def build_database(db: Database):
     accounts_table = get_table("accounts", db=db)
     following_table = get_table("following", db=db)
     statuses_table = get_table("statuses", db=db)
+    media_attachments_table = get_table("media_attachments", db=db)
 
     if accounts_table.exists() is False:
         accounts_table.create(
@@ -103,6 +105,19 @@ def build_database(db: Database):
         status_activities_table.create_index(["account_id", "activity"])
     if ("status_id", "activity") not in status_activities_indexes:
         status_activities_table.create_index(["status_id", "activity"])
+
+    if media_attachments_table.exists() is False:
+        media_attachments_table.create(
+            columns={
+                "id": int,
+                "status_id": int,
+                "src": str,
+                "type": str,
+                "description": str,
+            },
+            pk="id",
+            foreign_keys=(("status_id", "statuses", "id"),),
+        )
 
 
 def get_client(auth_file_path: str) -> MastodonClient:
@@ -242,6 +257,45 @@ def extract_reblogs(statuses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return reblogs
 
 
+def transformer_media_attachment(media_attachment: Dict[str, Any]):
+    """
+    Transformer a Mastodon media attachment, so it can be safely saved to the
+    SQLite database.
+    """
+    to_keep = ("id", "status_id", "src", "type", "description")
+    to_remove = [k for k in media_attachment.keys() if k not in to_keep]
+    for key in to_remove:
+        del media_attachment[key]
+
+
+def save_media_attachments(
+    db: Database, media_attachments: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    Save media attachments to the SQLite database.
+    """
+    build_database(db)
+    media_attachments_table = get_table("media_attachments", db=db)
+
+    for media_attachment in media_attachments:
+        path_dir = Path(f"media/{media_attachment['account_id']}")
+        path_str = f"{path_dir}/{media_attachment['id']}"
+        if "/" not in media_attachment["url"].split(".")[-1]:
+            path_str += f".{media_attachment['url'].split('.')[-1]}"
+        media_attachment["src"] = path_str
+
+        file_path = Path(path_str)
+        if not file_path.exists():
+            Path(path_dir).mkdir(parents=True, exist_ok=True)
+            data = requests.get(media_attachment["url"]).content
+            # TODO: data == '{"error":"Too many requests"}'
+            file_path.write_bytes(data)
+
+        transformer_media_attachment(media_attachment)
+
+    media_attachments_table.upsert_all(media_attachments, pk="id")
+
+
 def transformer_status(status: Dict[str, Any]):
     """
     Transformer a Mastodon status, so it can be safely saved to the SQLite
@@ -264,7 +318,10 @@ def transformer_status(status: Dict[str, Any]):
     status["reblog_of"] = reblog["id"] if reblog else None
 
 
-def save_statuses(db: Database, statuses: List[Dict[str, Any]]):
+# TODO: include_media support on favourites and bookmarks commands
+def save_statuses(
+    db: Database, statuses: List[Dict[str, Any]], include_media: bool = True
+):
     """
     Save Mastodon statuses and their accounts to the SQLite database.
     """
@@ -273,6 +330,15 @@ def save_statuses(db: Database, statuses: List[Dict[str, Any]]):
 
     reblogs = extract_reblogs(statuses)
     statuses.extend(reblogs)
+
+    media_attachments = []
+    for status in statuses:
+        if include_media:
+            for attachment in status.get("media_attachments", []):
+                attachment["status_id"] = status["id"]
+                attachment["account_id"] = status["account"]["id"]
+                media_attachments.append(attachment)
+    save_media_attachments(db, media_attachments)
 
     accounts = [d["account"] for d in statuses]
     save_accounts(db, accounts)
